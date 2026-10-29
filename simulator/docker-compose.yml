@@ -1,0 +1,74 @@
+# =============================================================================
+# EnRuta Architectural Simulator — Orquestación Productiva Multi-Contenedor
+# Uso estándar:   docker compose -f simulator/docker-compose.yml up --build -d
+# Perfil QA/Tests: docker compose -f simulator/docker-compose.yml --profile qa run --rm sim-qa-tests
+# =============================================================================
+
+services:
+  sim-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: enruta-sim-api
+    expose:
+      - "8000"
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: "/app"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 8s
+    restart: unless-stopped
+    networks:
+      - enruta-sim-net
+
+  sim-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_PUBLIC_URL: "${PUBLIC_GITHUB_PAGES_URL:-https://teach1030.github.io/EnRuta/}"
+    container_name: enruta-sim-web
+    # Mapeo por defecto hacia el host: "8080:80"
+    ports:
+      - "${SIM_PORT:-8080}:80"
+    depends_on:
+      sim-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:80/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - enruta-sim-net
+
+  sim-qa-tests:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: enruta-sim-qa
+    profiles: ["qa"]
+    command: pytest -v --tb=short
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: "/app"
+    networks:
+      - enruta-sim-net
+
+networks:
+  enruta-sim-net:
+    driver: bridge
