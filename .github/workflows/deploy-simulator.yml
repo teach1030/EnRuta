@@ -1,0 +1,93 @@
+name: Validate Docker & Deploy EnRuta Simulator to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "simulator/**"
+      - ".github/workflows/deploy-simulator.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages-enruta-simulator"
+  cancel-in-progress: false
+
+jobs:
+  validate-docker-and-qa:
+    name: Validate Pytest Math Engine & Docker Images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install simulator backend dependencies
+        working-directory: simulator/backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run mathematical & API QA test suite (pytest)
+        working-directory: simulator/backend
+        env:
+          PYTHONPATH: "."
+        run: pytest -v --tb=short
+
+      - name: Validate Docker Compose schema & build production images
+        run: |
+          docker compose -f simulator/docker-compose.yml config -q
+          docker compose -f simulator/docker-compose.yml build
+
+      - name: Run containerized QA profile inside non-root Docker image
+        run: |
+          docker compose -f simulator/docker-compose.yml --profile qa run --rm sim-qa-tests
+
+  deploy-github-pages:
+    name: Build Static SPA & Publish to GitHub Pages
+    needs: validate-docker-and-qa
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install simulator frontend dependencies
+        working-directory: simulator/frontend
+        run: npm install
+
+      - name: Build static simulator with GitHub Pages base path
+        working-directory: simulator/frontend
+        run: |
+          VITE_BASE_PATH=/EnRuta/ VITE_PUBLIC_URL=https://teach1030.github.io/EnRuta/ npm run build
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: simulator/frontend/dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

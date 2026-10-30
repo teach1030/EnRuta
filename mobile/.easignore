@@ -1,0 +1,63 @@
+# =============================================================================
+# EnRuta Mobile — Expo EAS Build Ignore (.easignore)
+# Protege la compilación del APK Android en servidores de Expo EAS:
+# 1. Excluye directorios hermanos del monorepo (simulador, backend, CI, guías)
+#    para garantizar 0 bytes extra en el tarball subido a EAS Build.
+# 2. Mantiene las exclusiones estándar de Expo / React Native (.gitignore).
+# =============================================================================
+
+# --- Exclusiones del monorepo EnRuta (rutas relativas desde mobile/) ---
+../simulator
+../backend
+../.github
+../.ia
+../ejemplos_guias
+../*.pdf
+
+# --- Equivalentes desde la raíz VCS (si EAS empaqueta desde la raíz git) ---
+/simulator
+/backend
+/.github
+/.ia
+/ejemplos_guias
+/*.pdf
+
+# --- Dependencias y artefactos locales de Expo / Web ---
+node_modules
+node_modules/
+.expo
+.expo/
+dist
+dist/
+web-build
+web-build/
+expo-env.d.ts
+
+# --- Logs y diagnósticos ---
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.metro-health-check*
+
+# --- Carpetas nativas autogeneradas (CNG / Prebuild en EAS) ---
+/ios
+/android
+.kotlin/
+
+# --- Credenciales locales, llaves y entornos ---
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.pem
+*.mobileprovision
+.env*.local
+
+# --- Metadatos de IDE, IA y TypeScript ---
+.DS_Store
+*.tsbuildinfo
+.claude/
+AGENTS.md
+CLAUDE.md
