@@ -74,6 +74,7 @@ class StopBase(BaseModel):
     lat: Optional[float] = Field(default=None, ge=-90.0, le=90.0)
     lng: Optional[float] = Field(default=None, ge=-180.0, le=180.0)
     color_code: Optional[str] = Field(default=None, max_length=20, examples=["#3B82F6"])
+    is_pinned: bool = Field(default=False)
 
 
 class StopInput(StopBase):
@@ -95,6 +96,10 @@ class StopUpdate(BaseModel):
     """
     Payload de PUT /stops/{id}. Todos los campos son opcionales (actualizacion parcial).
 
+    `is_pinned`:
+      - True  -> fija la parada en su posicion actual.
+      - False -> desbloquea (quita el candado) de la parada para futuras optimizaciones.
+
     `clients`:
       - omitido  -> los clientes no se tocan.
       - lista    -> sincronizacion completa: se crean los nuevos, se editan los que
@@ -105,11 +110,30 @@ class StopUpdate(BaseModel):
     lng: Optional[float] = Field(default=None, ge=-180.0, le=180.0)
     color_code: Optional[str] = Field(default=None, max_length=20)
     status: Optional[StopStatus] = None
+    is_pinned: Optional[bool] = Field(
+        default=None,
+        description="True para fijar la parada, False para desbloquearla (unpin).",
+    )
+    sequence_order: Optional[int] = Field(default=None, ge=1)
     clients: Optional[List[StopClientUpsert]] = None
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _normalize_status(cls, v):
+        if isinstance(v, str):
+            return v.strip().lower()
+        return v
 
 
 class StopStatusUpdate(BaseModel):
     status: StopStatus
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _normalize_status(cls, v):
+        if isinstance(v, str):
+            return v.strip().lower()
+        return v
 
 
 class StopResponse(StopBase):

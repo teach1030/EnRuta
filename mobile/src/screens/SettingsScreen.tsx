@@ -1,9 +1,19 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuthStore, NavigatorOption } from '../store/useAuthStore';
+import { api, getAuthToken } from '../services/api';
 
 const NAVIGATOR_OPTIONS: Array<{
   id: NavigatorOption;
@@ -27,9 +37,60 @@ const NAVIGATOR_OPTIONS: Array<{
 
 export default function SettingsScreen() {
   const navigation = useNavigation();
+  const user = useAuthStore(state => state.user);
+  const updateUser = useAuthStore(state => state.updateUser);
   const defaultNavigator = useAuthStore(state => state.defaultNavigator);
   const setDefaultNavigator = useAuthStore(state => state.setDefaultNavigator);
   const isGuest = useAuthStore(state => state.isGuest);
+
+  const [vehicle, setVehicle] = useState(user?.vehicle ?? '');
+  const [vehiclePlate, setVehiclePlate] = useState(user?.vehicle_plate ?? '');
+  const [isSavingVehicle, setIsSavingVehicle] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      setVehicle(user.vehicle ?? '');
+      setVehiclePlate(user.vehicle_plate ?? '');
+    }
+  }, [user]);
+
+  const handleSaveVehicle = async () => {
+    const trimmedVehicle = vehicle.trim();
+    const trimmedPlate = vehiclePlate.trim().toUpperCase();
+
+    if (!trimmedVehicle && !trimmedPlate) {
+      Alert.alert('Datos vacíos', 'Por favor ingresa al menos el tipo de vehículo o la placa.');
+      return;
+    }
+
+    if (isGuest || !getAuthToken()) {
+      updateUser({
+        vehicle: trimmedVehicle || 'Vehículo de reparto',
+        vehicle_plate: trimmedPlate || '',
+      });
+      Alert.alert('Actualizado', 'Datos de vehículo guardados en tu sesión.');
+      return;
+    }
+
+    setIsSavingVehicle(true);
+    try {
+      const updated = await api.auth.updateProfile({
+        vehicle: trimmedVehicle,
+        vehicle_plate: trimmedPlate,
+      });
+
+      updateUser({
+        vehicle: updated.vehicle ?? trimmedVehicle,
+        vehicle_plate: updated.vehicle_plate ?? trimmedPlate,
+      });
+
+      Alert.alert('¡Guardado!', 'Los datos de tu vehículo se actualizaron correctamente.');
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'No fue posible guardar los cambios en el servidor.');
+    } finally {
+      setIsSavingVehicle(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -41,8 +102,57 @@ export default function SettingsScreen() {
         <View style={{ width: 32 }} />
       </View>
 
-      <View style={styles.body}>
-        <Text style={styles.sectionTitle}>Navegador Predeterminado</Text>
+      <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* ── Vehículo del Conductor ──────────────────────────────────── */}
+        <Text style={styles.sectionTitle}>Vehículo y Placa</Text>
+        <Text style={styles.sectionSubtitle}>
+          Esta información se mostrará en tu perfil y menú lateral.
+        </Text>
+
+        <View style={styles.card}>
+          <Text style={styles.inputLabel}>Tipo / Modelo de Vehículo</Text>
+          <View style={styles.inputWrapper}>
+            <Ionicons name="bicycle-outline" size={20} color="#065F46" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Ej: Moto Suzuki GN 125, Carro"
+              placeholderTextColor="#94A3B8"
+              value={vehicle}
+              onChangeText={setVehicle}
+              editable={!isSavingVehicle}
+            />
+          </View>
+
+          <Text style={styles.inputLabel}>Placa</Text>
+          <View style={styles.inputWrapper}>
+            <Ionicons name="card-outline" size={20} color="#065F46" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Ej: ABC-123"
+              placeholderTextColor="#94A3B8"
+              value={vehiclePlate}
+              onChangeText={setVehiclePlate}
+              autoCapitalize="characters"
+              editable={!isSavingVehicle}
+            />
+          </View>
+
+          <TouchableOpacity
+            style={styles.saveBtn}
+            onPress={handleSaveVehicle}
+            disabled={isSavingVehicle}
+            activeOpacity={0.85}
+          >
+            {isSavingVehicle ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.saveBtnText}>Guardar Vehículo</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* ── Navegador Predeterminado ────────────────────────────────── */}
+        <Text style={[styles.sectionTitle, { marginTop: 28 }]}>Navegador Predeterminado</Text>
         <Text style={styles.sectionSubtitle}>
           Elige la aplicación que se abrirá al presionar "Ir a la siguiente parada".
         </Text>
@@ -92,7 +202,9 @@ export default function SettingsScreen() {
             </Text>
           </View>
         )}
-      </View>
+
+        <View style={{ height: 32 }} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -120,8 +232,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0F172A',
   },
-  body: {
+  content: {
     flex: 1,
+  },
+  scrollContent: {
     padding: 20,
   },
   sectionTitle: {
@@ -133,7 +247,57 @@ const styles = StyleSheet.create({
   sectionSubtitle: {
     fontSize: 13,
     color: '#64748B',
-    marginBottom: 16,
+    marginBottom: 14,
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155',
+    marginBottom: 6,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 46,
+    marginBottom: 14,
+  },
+  inputIcon: {
+    marginRight: 10,
+  },
+  input: {
+    flex: 1,
+    fontSize: 15,
+    color: '#0F172A',
+  },
+  saveBtn: {
+    backgroundColor: '#065F46',
+    borderRadius: 10,
+    height: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  saveBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
   optionsContainer: {
     gap: 12,

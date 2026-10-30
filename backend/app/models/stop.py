@@ -1,6 +1,6 @@
 import uuid
 import enum
-from sqlalchemy import Column, String, Float, ForeignKey, Integer, Enum as SQLEnum
+from sqlalchemy import Boolean, Column, String, Float, ForeignKey, Integer, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.db.session import Base
@@ -25,6 +25,7 @@ class Stop(Base):
     status = Column(SQLEnum(StopStatus), default=StopStatus.pending, nullable=False)
     color_code = Column(String, nullable=True)
     sequence_order = Column(Integer, nullable=True)
+    is_pinned = Column(Boolean, default=False, nullable=False, server_default="false")
 
     # Relaciones
     # lazy='selectin' es crucial para SQLAlchemy Async y Pydantic anidado

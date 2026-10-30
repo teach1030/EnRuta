@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
-import { useRouteStore, findStopByAddress } from '../store/useRouteStore';
+import {
+  useRouteStore,
+  findStopByAddress,
+  isUuid,
+  mapApiStopToStore,
+} from '../store/useRouteStore';
+import { api, getAuthToken } from '../services/api';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Scanner'>;
@@ -35,8 +41,11 @@ const C = {
 export default function ScannerScreen({ navigation }: Props) {
   const [permission, requestPermission] = useCameraPermissions();
   const [processing, setProcessing] = useState(false);
+  const cameraRef = useRef<CameraView>(null);
+
   const addStop = useRouteStore(state => state.addStop);
   const updateStop = useRouteStore(state => state.updateStop);
+  const ensureActiveRoute = useRouteStore(state => state.ensureActiveRoute);
 
   if (!permission) return <View style={styles.container} />;
 
@@ -59,15 +68,33 @@ export default function ScannerScreen({ navigation }: Props) {
     );
   }
 
-  const handleCapture = () => {
+  const handleCapture = async () => {
+    if (!cameraRef.current || processing) return;
+
     setProcessing(true);
-    setTimeout(() => { 
-      setProcessing(false); 
-      
-      // Simular OCR obteniendo una dirección que ya existe
-      const scannedAddress = 'Calle 166 #9-24';
-      const scannedName = 'Juan Perez'; // Nombre simulado del paquete
-      
+    try {
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
+      if (!photo?.uri) {
+        throw new Error('No se pudo capturar la imagen de la camara.');
+      }
+
+      const ocrResult = await api.ocr.processGuide(photo.uri);
+      const scannedAddress = (ocrResult.normalized_address || ocrResult.raw_address || '').trim();
+      const scannedName = (ocrResult.recipient_name || 'Cliente').trim();
+      const scannedPhone = (ocrResult.recipient_phone || '').trim();
+      const scannedNotes = (ocrResult.complement || '').trim();
+      const scannedDetail = [ocrResult.complement, ocrResult.locality].filter(Boolean).join(', ');
+      const lat = ocrResult.lat ?? 4.6097;
+      const lng = ocrResult.lng ?? -74.0817;
+
+      if (!scannedAddress) {
+        Alert.alert(
+          'Direccion no detectada',
+          'No logramos identificar la direccion en la guia. Intenta acercar mas la camara con buena iluminacion.'
+        );
+        return;
+      }
+
       const existingStop = findStopByAddress(useRouteStore.getState().stops, scannedAddress);
 
       if (existingStop) {
@@ -76,10 +103,12 @@ export default function ScannerScreen({ navigation }: Props) {
           '¿Agregar este paquete a un nuevo cliente en esta parada?',
           [
             { text: 'Cancelar', style: 'cancel', onPress: () => navigation.goBack() },
-            { 
-              text: 'Aceptar', 
-              onPress: () => {
-                const existingClient = existingStop.clients.find(c => c.name === scannedName);
+            {
+              text: 'Aceptar',
+              onPress: async () => {
+                const existingClient = existingStop.clients.find(
+                  c => c.name.trim().toLowerCase() === scannedName.toLowerCase()
+                );
                 const clients = existingClient
                   ? existingStop.clients.map(c =>
                       c.id === existingClient.id ? { ...c, packages: c.packages + 1 } : c
@@ -89,39 +118,93 @@ export default function ScannerScreen({ navigation }: Props) {
                       {
                         id: `c${Date.now()}`,
                         name: scannedName,
-                        phone: '',
+                        phone: scannedPhone,
                         packages: 1,
-                        notes: ''
+                        notes: scannedNotes,
                       },
                     ];
+
                 updateStop(existingStop.id, { clients });
+
+                if (getAuthToken() && isUuid(existingStop.id)) {
+                  try {
+                    const updated = await api.stops.update(existingStop.id, {
+                      clients: clients.map(c => ({
+                        id: isUuid(c.id) ? c.id : undefined,
+                        name: c.name || 'Cliente',
+                        phone: c.phone || undefined,
+                        packages_count: c.packages || 1,
+                        notes: c.notes || undefined,
+                      })),
+                    });
+                    updateStop(existingStop.id, mapApiStopToStore(updated, existingStop.detail));
+                  } catch {}
+                }
+
                 navigation.goBack();
-              }
-            }
+              },
+            },
           ]
         );
       } else {
-        addStop({
-          id: `s${Date.now()}`,
-          address: scannedAddress,
-          detail: '',
-          lat: 4.6097,
-          lng: -74.0817,
-          status: 'pending',
-          colorCode: '#3B82F6',
-          clients: [
-            {
-              id: `c${Date.now()}`,
-              name: scannedName,
-              phone: '',
-              packages: 1,
-              notes: ''
-            },
-          ],
-        });
+        let createdOnBackend = false;
+        if (getAuthToken()) {
+          try {
+            const activeRouteId = await ensureActiveRoute();
+            if (activeRouteId) {
+              const createdStop = await api.stops.create({
+                route_id: activeRouteId,
+                address: scannedAddress,
+                lat: ocrResult.lat ?? undefined,
+                lng: ocrResult.lng ?? undefined,
+                color_code: '#3B82F6',
+                clients: [
+                  {
+                    name: scannedName,
+                    phone: scannedPhone || undefined,
+                    packages_count: 1,
+                    notes: scannedNotes || undefined,
+                  },
+                ],
+              });
+              addStop(mapApiStopToStore(createdStop, scannedDetail));
+              createdOnBackend = true;
+            }
+          } catch {}
+        }
+
+        if (!createdOnBackend) {
+          addStop({
+            id: `s${Date.now()}`,
+            address: scannedAddress,
+            detail: scannedDetail,
+            lat,
+            lng,
+            status: 'pending',
+            colorCode: '#3B82F6',
+            isPinned: false,
+            clients: [
+              {
+                id: `c${Date.now()}`,
+                name: scannedName,
+                phone: scannedPhone,
+                packages: 1,
+                notes: scannedNotes,
+              },
+            ],
+          });
+        }
+
         navigation.goBack();
       }
-    }, 2000);
+    } catch (err: any) {
+      Alert.alert(
+        'Error al escanear guia',
+        err?.message || 'No fue posible procesar la imagen de la guia.'
+      );
+    } finally {
+      setProcessing(false);
+    }
   };
 
   return (
@@ -129,19 +212,25 @@ export default function ScannerScreen({ navigation }: Props) {
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
       {/* CRITICAL RULE: CameraView without children */}
-      <CameraView style={StyleSheet.absoluteFill} facing="back" />
+      <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
 
       {/* Flex-based Overlay */}
       <View style={[StyleSheet.absoluteFill, { zIndex: 10 }]} pointerEvents="none">
         <View style={styles.maskTop}>
-          {/* Instruction text */}
+          {/* Instruction text OUTSIDE the bounding box */}
           <View style={styles.instructionBlock}>
-            <Text style={styles.instructionMain}>Encuadra TODA la etiqueta</Text>
-            <Text style={styles.instructionSub}>Extraeremos direccion, nombre y telefono</Text>
+            <View style={styles.guideBadge}>
+              <Ionicons name="scan-outline" size={18} color="#10B981" style={{ marginRight: 6 }} />
+              <Text style={styles.guideBadgeText}>Apunta solo a los datos del destinatario</Text>
+            </View>
+            <Text style={styles.instructionSub}>
+              Encuadra nombre, dirección y teléfono dentro del recuadro
+            </Text>
           </View>
         </View>
         <View style={styles.maskCenterRow}>
           <View style={styles.maskSide} />
+          {/* Centered bounding box with dashed borders - 100% unobstructed inside */}
           <View style={styles.boundingBox}>
             <View style={[styles.corner, styles.cornerTL]} />
             <View style={[styles.corner, styles.cornerTR]} />
@@ -203,7 +292,33 @@ const styles = StyleSheet.create({
   maskSide: { flex: 1, backgroundColor: C.overlay },
   maskBottom: { flex: 1, backgroundColor: C.overlay },
   
-  boundingBox: { width: '85%', height: '100%', backgroundColor: 'transparent' },
+  boundingBox: {
+    width: '88%',
+    height: '100%',
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: '#10B981',
+    borderRadius: 16,
+    borderStyle: 'dashed',
+    position: 'relative',
+  },
+  guideBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(6, 95, 70, 0.90)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#10B981',
+    marginBottom: 8,
+  },
+  guideBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
   
   corner: { position: 'absolute', width: CORNER_SIZE, height: CORNER_SIZE, borderColor: C.emerald, borderWidth: CORNER_THICKNESS },
   cornerTL: { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0, borderTopLeftRadius: 8 },

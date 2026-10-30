@@ -6,6 +6,7 @@ Publicos:   register, login (email o celular), google-auth
 Protegidos: me (GET/PATCH), {driver_id} (GET/PATCH, solo el propio conductor)
 """
 import asyncio
+import logging
 import secrets
 import uuid
 
@@ -13,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_driver
@@ -29,6 +30,8 @@ from app.schemas.driver import (
     GoogleAuthRequest,
     Token,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/drivers", tags=["Conductores"])
 
@@ -84,40 +87,68 @@ async def _verify_google_token(raw_token: str) -> dict:
 # ─── POST /drivers/register ──────────────────────────────────────────────────
 @router.post(
     "/register",
-    response_model=DriverResponse,
+    response_model=Token,
     status_code=status.HTTP_201_CREATED,
     summary="Registrar conductor",
-    description="Crea un nuevo conductor en el sistema. El celular y el email (si se envia) son unicos.",
+    description="Crea un nuevo conductor en el sistema y retorna el token JWT junto con su perfil.",
 )
 async def register_driver(
     payload: DriverCreate,
     db: AsyncSession = Depends(get_db),
-) -> Driver:
-    result = await db.execute(select(Driver).where(Driver.phone == payload.phone))
-    if result.scalar_one_or_none():
+) -> dict:
+    try:
+        phone = payload.phone.strip() if payload.phone else f"p_{uuid.uuid4().hex[:12]}"
+
+        result = await db.execute(select(Driver).where(Driver.phone == phone))
+        if result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Ya existe un conductor registrado con el celular {phone}",
+            )
+
+        email = payload.email.strip().lower() if payload.email else None
+        if email and await _find_by_email(db, email):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Ya existe un conductor registrado con el email {email}",
+            )
+
+        hashed_pwd = await asyncio.to_thread(hash_password, payload.password)
+        driver = Driver(
+            name=payload.name.strip(),
+            phone=phone,
+            email=email,
+            vehicle=payload.vehicle.strip() if payload.vehicle else None,
+            vehicle_plate=payload.vehicle_plate.strip().upper() if payload.vehicle_plate else None,
+            hashed_password=hashed_pwd,
+        )
+        db.add(driver)
+        await db.commit()
+        await db.refresh(driver)
+        return _token_response(driver)
+    except HTTPException:
+        raise
+    except IntegrityError as exc:
+        await db.rollback()
+        logger.warning("Conflicto de unicidad al registrar conductor: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Ya existe un conductor registrado con el celular {payload.phone}",
-        )
-
-    email = payload.email.strip().lower() if payload.email else None
-    if email and await _find_by_email(db, email):
+            detail="El correo electronico o celular ya se encuentra registrado.",
+        ) from exc
+    except (SQLAlchemyError, asyncio.TimeoutError, OSError) as exc:
+        await db.rollback()
+        logger.error("Error de base de datos al registrar conductor: %s", exc)
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Ya existe un conductor registrado con el email {email}",
-        )
-
-    driver = Driver(
-        name=payload.name,
-        phone=payload.phone,
-        email=email,
-        vehicle_plate=payload.vehicle_plate,
-        hashed_password=hash_password(payload.password),
-    )
-    db.add(driver)
-    await db.commit()
-    await db.refresh(driver)
-    return driver
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Error de conexion con la base de datos al registrar el conductor. Intenta de nuevo.",
+        ) from exc
+    except Exception as exc:
+        await db.rollback()
+        logger.error("Error inesperado al registrar conductor: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"No se pudo completar el registro: {exc}",
+        ) from exc
 
 
 # ─── POST /drivers/login ─────────────────────────────────────────────────────
@@ -131,14 +162,26 @@ async def login_driver(
     payload: DriverLogin,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    if payload.email:
-        driver = await _find_by_email(db, payload.email)
-    else:
-        result = await db.execute(select(Driver).where(Driver.phone == payload.phone.strip()))
-        driver = result.scalar_one_or_none()
+    try:
+        if payload.email:
+            driver = await _find_by_email(db, payload.email)
+        else:
+            result = await db.execute(select(Driver).where(Driver.phone == payload.phone.strip()))
+            driver = result.scalar_one_or_none()
+    except (SQLAlchemyError, asyncio.TimeoutError, OSError) as exc:
+        logger.error("Error de base de datos en login: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Error de conexion con la base de datos. Intenta de nuevo.",
+        ) from exc
 
     # Mismo mensaje para "no existe" y "contraseña incorrecta" (no revelar cuentas).
-    if not driver or not verify_password(payload.password, driver.hashed_password):
+    password_ok = (
+        await asyncio.to_thread(verify_password, payload.password, driver.hashed_password)
+        if driver is not None
+        else False
+    )
+    if not driver or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales incorrectas",
@@ -215,12 +258,18 @@ async def get_me(driver: Driver = Depends(get_current_driver)) -> Driver:
     return driver
 
 
-# ─── PATCH /drivers/me ───────────────────────────────────────────────────────
+# ─── PUT / PATCH /drivers/me ────────────────────────────────────────────────
+@router.put(
+    "/me",
+    response_model=DriverResponse,
+    summary="Actualizar mi perfil (PUT)",
+    description="Actualiza nombre, email, vehiculo o placa del conductor autenticado.",
+)
 @router.patch(
     "/me",
     response_model=DriverResponse,
-    summary="Actualizar mi perfil",
-    description="Actualiza nombre, email o placa del conductor autenticado.",
+    summary="Actualizar mi perfil (PATCH)",
+    description="Actualiza nombre, email, vehiculo o placa del conductor autenticado.",
 )
 async def update_me(
     payload: DriverUpdate,
@@ -239,11 +288,41 @@ async def update_me(
             )
         update_data["email"] = new_email
 
+    if "phone" in update_data and update_data["phone"]:
+        new_phone = update_data["phone"].strip()
+        result = await db.execute(select(Driver).where(Driver.phone == new_phone))
+        other = result.scalar_one_or_none()
+        if other is not None and other.id != driver.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Ya existe un conductor registrado con el celular {new_phone}",
+            )
+        update_data["phone"] = new_phone
+
+    if "vehicle" in update_data and update_data["vehicle"]:
+        update_data["vehicle"] = update_data["vehicle"].strip()
+
+    if "vehicle_plate" in update_data and update_data["vehicle_plate"]:
+        update_data["vehicle_plate"] = update_data["vehicle_plate"].strip().upper()
+
     for field, value in update_data.items():
         setattr(driver, field, value)
 
-    await db.commit()
-    await db.refresh(driver)
+    try:
+        await db.commit()
+        await db.refresh(driver)
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="El correo o celular indicado ya pertenece a otro conductor.",
+        ) from exc
+    except (SQLAlchemyError, asyncio.TimeoutError, OSError) as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Error de base de datos al actualizar el perfil.",
+        ) from exc
     return driver
 
 

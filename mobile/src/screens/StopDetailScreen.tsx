@@ -8,14 +8,17 @@ import {
   TextInput,
   Linking,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
-import { useRouteStore } from '../store/useRouteStore';
+import { useRouteStore, isUuid, mapApiStopToStore } from '../store/useRouteStore';
 import type { Stop, Client } from '../store/useRouteStore';
+import { useAuthStore } from '../store/useAuthStore';
+import { api, getAuthToken } from '../services/api';
 
 const COLORS = [
   '#3B82F6', // Blue
@@ -35,6 +38,50 @@ export default function StopDetailScreen() {
   const addStop = useRouteStore(state => state.addStop);
   const updateStop = useRouteStore(state => state.updateStop);
   const removeStop = useRouteStore(state => state.removeStop);
+  const ensureActiveRoute = useRouteStore(state => state.ensureActiveRoute);
+  const defaultNavigator = useAuthStore(state => state.defaultNavigator);
+
+  const handleNavigateToStop = async () => {
+    const lat = stop.lat;
+    const lng = stop.lng;
+    if (lat === undefined || lng === undefined || lat === null || lng === null) {
+      Alert.alert(
+        'Sin coordenadas GPS',
+        'Esta parada no cuenta con coordenadas válidas para navegación satelital.'
+      );
+      return;
+    }
+
+    // Formato estricto para Waze: waze://?ll={lat},{lng}&navigate=yes
+    const wazeUrl = `waze://?ll=${lat},${lng}&navigate=yes`;
+    const googleMapsUrl = `google.navigation:q=${lat},${lng}`;
+    const webFallbackUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+
+    const primaryUrl = defaultNavigator === 'waze' ? wazeUrl : googleMapsUrl;
+    const secondaryUrl = defaultNavigator === 'waze' ? googleMapsUrl : wazeUrl;
+
+    try {
+      const canOpen = await Linking.canOpenURL(primaryUrl);
+      if (canOpen) {
+        await Linking.openURL(primaryUrl);
+        return;
+      }
+    } catch {}
+
+    try {
+      const canOpenSec = await Linking.canOpenURL(secondaryUrl);
+      if (canOpenSec) {
+        await Linking.openURL(secondaryUrl);
+        return;
+      }
+    } catch {}
+
+    try {
+      await Linking.openURL(webFallbackUrl);
+    } catch {
+      Alert.alert('Error', 'No se pudo abrir ninguna aplicación de mapas en el dispositivo.');
+    }
+  };
 
   // Resolve the initial stop: either a tempStop (new) or an existing one from the store
   const resolveInitial = (): Stop => {
@@ -45,6 +92,7 @@ export default function StopDetailScreen() {
   };
 
   const [stop, setStop] = useState<Stop>(resolveInitial);
+  const [saving, setSaving] = useState(false);
 
   const handleColorChange = (color: string) => {
     setStop(prev => ({ ...prev, colorCode: color }));
@@ -111,14 +159,77 @@ export default function StopDetailScreen() {
     if (phone) Linking.openURL(`tel:${phone}`);
   };
 
-  const handleSave = () => {
-    if (isNew) {
-      addStop({ ...stop });
-    } else {
-      const { id, ...changes } = stop;
-      updateStop(id, changes);
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      if (isNew) {
+        if (getAuthToken()) {
+          const activeRouteId = await ensureActiveRoute();
+          if (activeRouteId) {
+            const created = await api.stops.create({
+              route_id: activeRouteId,
+              address: stop.address,
+              lat: stop.lat,
+              lng: stop.lng,
+              color_code: stop.colorCode,
+              clients: stop.clients.map(c => ({
+                name: c.name.trim() || 'Cliente',
+                phone: c.phone.trim() || undefined,
+                packages_count: c.packages || 1,
+                notes: c.notes.trim() || undefined,
+              })),
+            });
+            addStop(mapApiStopToStore(created, stop.detail));
+            navigation.goBack();
+            return;
+          }
+        }
+        const added = addStop({ ...stop });
+        if (added) navigation.goBack();
+      } else {
+        const { id, ...changes } = stop;
+        updateStop(id, changes);
+
+        if (getAuthToken()) {
+          let targetStopId = id;
+          if (!isUuid(targetStopId)) {
+            await ensureActiveRoute();
+            const synced = useRouteStore
+              .getState()
+              .stops.find(s => s.address.trim().toLowerCase() === stop.address.trim().toLowerCase());
+            if (synced && isUuid(synced.id)) {
+              targetStopId = synced.id;
+            }
+          }
+
+          if (isUuid(targetStopId)) {
+            const updated = await api.stops.update(targetStopId, {
+              address: stop.address,
+              lat: stop.lat,
+              lng: stop.lng,
+              color_code: stop.colorCode,
+              status: stop.status,
+              is_pinned: stop.isPinned,
+              clients: stop.clients.map(c => ({
+                id: isUuid(c.id) ? c.id : undefined,
+                name: c.name.trim() || 'Cliente',
+                phone: c.phone.trim() || undefined,
+                packages_count: c.packages || 1,
+                notes: c.notes.trim() || undefined,
+              })),
+            });
+            updateStop(targetStopId, mapApiStopToStore(updated, stop.detail));
+          }
+        }
+
+        navigation.goBack();
+      }
+    } catch (err: any) {
+      Alert.alert('Error al guardar', err?.message || 'No se pudo sincronizar la parada con el servidor.');
+    } finally {
+      setSaving(false);
     }
-    navigation.goBack();
   };
 
   const handleDeleteStop = () => {
@@ -130,8 +241,16 @@ export default function StopDetailScreen() {
         {
           text: 'Eliminar',
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
             if (!isNew) {
+              try {
+                if (getAuthToken() && isUuid(stop.id)) {
+                  await api.stops.delete(stop.id);
+                }
+              } catch (err: any) {
+                Alert.alert('Error al eliminar', err?.message || 'No se pudo eliminar la parada del servidor.');
+                return;
+              }
               removeStop(stop.id);
             }
             navigation.goBack();
@@ -148,8 +267,12 @@ export default function StopDetailScreen() {
           <Ionicons name="arrow-back" size={24} color="#0F172A" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{isNew ? 'Nueva Parada' : 'Editar Parada'}</Text>
-        <TouchableOpacity onPress={handleSave}>
-          <Text style={styles.doneBtn}>{isNew ? 'Guardar' : 'Listo'}</Text>
+        <TouchableOpacity onPress={handleSave} disabled={saving}>
+          {saving ? (
+            <ActivityIndicator size="small" color="#3B82F6" />
+          ) : (
+            <Text style={styles.doneBtn}>{isNew ? 'Guardar' : 'Listo'}</Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -158,6 +281,26 @@ export default function StopDetailScreen() {
           <Text style={styles.addressText}>{stop.address}</Text>
           <Text style={styles.detailText}>{stop.detail || 'Sin detalle de ubicación'}</Text>
         </View>
+
+        {/* Boton grande para Navegar a esta parada */}
+        <TouchableOpacity
+          style={styles.navigateBtn}
+          onPress={handleNavigateToStop}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Navegar a esta parada"
+        >
+          <View style={styles.navigateBtnIcon}>
+            <Ionicons name="navigate" size={22} color="#FFFFFF" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.navigateBtnText}>Navegar a esta parada</Text>
+            <Text style={styles.navigateBtnSubtext}>
+              Iniciar guía GPS ({defaultNavigator === 'waze' ? 'Waze' : 'Google Maps'})
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+        </TouchableOpacity>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.colorSelector}>
           {COLORS.map(color => (
@@ -248,9 +391,9 @@ export default function StopDetailScreen() {
         </TouchableOpacity>
 
         {isNew && (
-          <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+          <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
             <Ionicons name="checkmark-circle-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-            <Text style={styles.saveBtnText}>Guardar Parada</Text>
+            <Text style={styles.saveBtnText}>{saving ? 'Guardando...' : 'Guardar Parada'}</Text>
           </TouchableOpacity>
         )}
 
@@ -309,6 +452,41 @@ const styles = StyleSheet.create({
   detailText: {
     fontSize: 15,
     color: '#64748B',
+  },
+  navigateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10B981',
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  navigateBtnIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  navigateBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  navigateBtnSubtext: {
+    color: 'rgba(255, 255, 255, 0.88)',
+    fontSize: 12,
+    marginTop: 2,
   },
   colorSelector: {
     paddingHorizontal: 20,

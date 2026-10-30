@@ -40,6 +40,7 @@ type Props = {
 export default function SideMenu({ visible, onClose }: Props) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const user = useAuthStore(state => state.user);
+  const isGuest = useAuthStore(state => state.isGuest);
   const logout = useAuthStore(state => state.logout);
   const translateX = useRef(new Animated.Value(-MENU_WIDTH)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
@@ -99,6 +100,10 @@ export default function SideMenu({ visible, onClose }: Props) {
     }
   }, [visible]);
 
+  const avatarName = user?.name ? encodeURIComponent(user.name) : 'Conductor';
+  const displayName = user?.name || (isGuest ? 'Usuario Invitado' : 'Conductor EnRuta');
+  const vehicleText = user?.vehicle || user?.vehicle_plate || (isGuest ? 'Modo prueba' : 'Vehículo de reparto');
+
   return (
     <Modal
       transparent
@@ -119,13 +124,26 @@ export default function SideMenu({ visible, onClose }: Props) {
           <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
             <View style={styles.profileHeader}>
               <Image
-                source={{ uri: 'https://ui-avatars.com/api/?name=Juan+Esteban&background=10B981&color=fff&size=128' }}
+                source={{ uri: `https://ui-avatars.com/api/?name=${avatarName}&background=10B981&color=fff&size=128` }}
                 style={styles.avatar}
               />
-              <Text style={styles.profileName}>{user?.name ?? 'Juan Esteban Guerrero'}</Text>
+              <Text style={styles.profileName} numberOfLines={1}>{displayName}</Text>
+
+              {user?.phone ? (
+                <View style={styles.infoRow}>
+                  <Ionicons name="call-outline" size={13} color="#A7F3D0" style={{ marginRight: 4 }} />
+                  <Text style={styles.infoText}>{user.phone}</Text>
+                </View>
+              ) : user?.email ? (
+                <View style={styles.infoRow}>
+                  <Ionicons name="mail-outline" size={13} color="#A7F3D0" style={{ marginRight: 4 }} />
+                  <Text style={styles.infoText} numberOfLines={1}>{user.email}</Text>
+                </View>
+              ) : null}
+
               <View style={styles.vehicleRow}>
                 <Ionicons name="bicycle-outline" size={14} color="#A7F3D0" style={{ marginRight: 4 }} />
-                <Text style={styles.vehicleText}>{user?.vehicle ?? 'Suzuki GSX-S 150'}</Text>
+                <Text style={styles.vehicleText} numberOfLines={1}>{vehicleText}</Text>
               </View>
             </View>
 
@@ -191,7 +209,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#065F46',
     paddingHorizontal: 20,
     paddingTop: 24,
-    paddingBottom: 28,
+    paddingBottom: 24,
   },
   avatar: {
     width: 64,
@@ -205,11 +223,21 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     color: '#FFFFFF',
-    marginBottom: 6,
+    marginBottom: 4,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  infoText: {
+    fontSize: 12,
+    color: '#E2E8F0',
   },
   vehicleRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginTop: 2,
   },
   vehicleText: {
     fontSize: 13,

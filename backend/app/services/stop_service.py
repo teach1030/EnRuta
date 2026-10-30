@@ -150,6 +150,7 @@ async def create_stop(
         color_code=data.color_code,
         status=StopStatus.pending,
         sequence_order=sequence_order,
+        is_pinned=getattr(data, "is_pinned", False) or False,
     )
     stop.clients = [_new_client(c) for c in data.clients]
     db.add(stop)
@@ -160,13 +161,14 @@ async def create_stop(
 async def apply_stop_update(db: AsyncSession, stop: Stop, payload: StopUpdate) -> bool:
     """
     Aplica un StopUpdate parcial sobre `stop` (ya cargado y verificado).
+    Soporta explicitamente el cambio de `is_pinned` a False (desbloqueo/unpin).
     Devuelve True si cambio el estado (para recalcular la ruta).
     """
     changes = payload.model_dump(exclude_unset=True, exclude={"clients"})
 
-    # address y status son NOT NULL: un null explicito se ignora.
-    for non_nullable in ("address", "status"):
-        if changes.get(non_nullable) is None:
+    # address, status e is_pinned son NOT NULL: un null explicito se ignora.
+    for non_nullable in ("address", "status", "is_pinned"):
+        if non_nullable in changes and changes.get(non_nullable) is None:
             changes.pop(non_nullable, None)
 
     if "address" in changes:
@@ -179,6 +181,10 @@ async def apply_stop_update(db: AsyncSession, stop: Stop, payload: StopUpdate) -
     status_changed = "status" in changes and changes["status"] != stop.status
     for field, value in changes.items():
         setattr(stop, field, value)
+
+    # Asegurar explicitamente el cambio de is_pinned (True o False)
+    if payload.is_pinned is not None:
+        stop.is_pinned = bool(payload.is_pinned)
 
     if payload.clients is not None:
         sync_clients(stop, payload.clients)

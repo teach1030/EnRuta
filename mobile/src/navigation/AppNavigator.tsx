@@ -9,6 +9,7 @@ import StopsListScreen from '../screens/StopsListScreen';
 import StopDetailScreen from '../screens/StopDetailScreen';
 import SearchAddressScreen from '../screens/SearchAddressScreen';
 import RouteHistoryScreen from '../screens/RouteHistoryScreen';
+import RouteDetailScreen from '../screens/RouteDetailScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -27,6 +28,7 @@ export type RootStackParamList = {
   StopDetail: { stopId: string; isNew?: boolean } | { tempStop: import('../screens/HomeMapScreen').Stop; isNew: true };
   SearchAddress: undefined;
   RouteHistory: undefined;
+  RouteDetail: { routeId: string | number; routeTitle?: string };
   Settings: undefined;
 };
 
@@ -56,6 +58,7 @@ export default function AppNavigator() {
       <Stack.Screen name="StopDetail" component={StopDetailScreen} options={{ presentation: 'modal' }} />
       <Stack.Screen name="SearchAddress" component={SearchAddressScreen} options={{ presentation: 'modal' }} />
       <Stack.Screen name="RouteHistory" component={RouteHistoryScreen} />
+      <Stack.Screen name="RouteDetail" component={RouteDetailScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
     </Stack.Navigator>
   );

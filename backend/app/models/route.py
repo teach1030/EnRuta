@@ -1,4 +1,4 @@
-﻿"""
+"""
 app/models/route.py
 Modelo ORM SQLAlchemy para la tabla 'routes'.
 Representa una ruta de reparto asignada a un conductor en un día específico.
@@ -82,6 +82,12 @@ class Route(Base):
         JSONB,
         nullable=True,
         comment="Resultado de OR-Tools: secuencia optimizada, distancia total, tiempo estimado",
+    )
+
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Fecha y hora de finalización de la ruta",
     )
 
     # --- Auditoría ---

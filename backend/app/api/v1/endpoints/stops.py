@@ -65,17 +65,23 @@ async def get_stop(
     return await get_owned_stop(db, stop_id, driver.id)
 
 
-# ─── PUT /stops/{stop_id} ────────────────────────────────────────────────────
+# ─── PUT / PATCH /stops/{stop_id} ────────────────────────────────────────────
 @router.put(
     "/{stop_id}",
     response_model=StopResponse,
     summary="Actualizar parada y sincronizar sus clientes",
     description=(
-        "Actualiza campos de la parada (address, lat, lng, color_code, status). "
+        "Actualiza campos de la parada (address, lat, lng, color_code, status, is_pinned, sequence_order). "
+        "Permite fijar o desbloquear la parada enviando `is_pinned: false`. "
         "Si se envia `clients`, se sincroniza el arreglo completo: crea los clientes "
         "nuevos (sin id o con id no-UUID), edita los que traen un id existente y "
         "elimina los que ya no aparecen. Si `clients` se omite, no se tocan."
     ),
+)
+@router.patch(
+    "/{stop_id}",
+    response_model=StopResponse,
+    summary="Actualizar parada parcialmente (incluye is_pinned)",
 )
 async def update_stop(
     stop_id: uuid.UUID,
@@ -86,6 +92,8 @@ async def update_stop(
     stop = await get_owned_stop(db, stop_id, driver.id)
 
     status_changed = await apply_stop_update(db, stop, payload)
+    if payload.is_pinned is not None:
+        stop.is_pinned = bool(payload.is_pinned)
     if status_changed:
         await recount_route(db, stop.route_id)
     await db.commit()

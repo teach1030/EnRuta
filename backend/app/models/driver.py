@@ -1,4 +1,4 @@
-﻿"""
+"""
 app/models/driver.py
 Modelo ORM SQLAlchemy para la tabla 'drivers'.
 Representa a los conductores de reparto registrados en el sistema.
@@ -44,6 +44,11 @@ class Driver(Base):
         String(255),
         nullable=False,
         comment="Contraseña hasheada (bcrypt)",
+    )
+    vehicle: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="Tipo de vehículo (ej: Moto Suzuki, Carro)",
     )
     vehicle_plate: Mapped[str | None] = mapped_column(
         String(10),

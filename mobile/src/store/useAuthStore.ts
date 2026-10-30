@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { initAuthToken } from '../services/api';
 
 export type NavigatorOption = 'maps' | 'waze';
 
@@ -8,7 +9,9 @@ export type AuthUser = {
   id: string;
   name: string;
   email?: string;
+  phone?: string;
   vehicle?: string;
+  vehicle_plate?: string;
 };
 
 type AuthState = {
@@ -18,6 +21,7 @@ type AuthState = {
   isHydrated: boolean;
   defaultNavigator: NavigatorOption;
   login: (userData?: Partial<AuthUser>) => void;
+  updateUser: (fields: Partial<AuthUser>) => void;
   loginAsGuest: () => void;
   logout: () => void;
   setDefaultNavigator: (nav: NavigatorOption) => void;
@@ -39,11 +43,18 @@ export const useAuthStore = create<AuthState>()(
           isGuest: false,
           user: {
             id: userData?.id ?? `u_${Date.now()}`,
-            name: userData?.name ?? 'Juan Esteban Guerrero',
-            email: userData?.email ?? 'juan@enruta.co',
-            vehicle: userData?.vehicle ?? 'Suzuki GSX-S 150',
+            name: userData?.name ?? 'Conductor EnRuta',
+            email: userData?.email ?? '',
+            phone: userData?.phone ?? '',
+            vehicle: userData?.vehicle ?? userData?.vehicle_plate ?? 'Vehiculo de Reparto',
+            vehicle_plate: userData?.vehicle_plate ?? userData?.vehicle ?? '',
           },
         }),
+
+      updateUser: (fields) =>
+        set((state) => ({
+          user: state.user ? { ...state.user, ...fields } : null,
+        })),
 
       loginAsGuest: () =>
         set({
@@ -52,32 +63,34 @@ export const useAuthStore = create<AuthState>()(
           user: {
             id: 'guest',
             name: 'Usuario Invitado',
-            vehicle: 'Modo prueba (máx. 10 paradas)',
+            phone: 'Sin celular',
+            vehicle: 'Modo prueba (max. 10 paradas)',
+            vehicle_plate: 'TEST-000',
           },
         }),
 
-      logout: () =>
+      logout: () => {
+        AsyncStorage.removeItem('enruta_jwt_token').catch(() => {});
         set({
-          user: null,
           isAuthenticated: false,
           isGuest: false,
-        }),
+          user: null,
+        });
+      },
 
       setDefaultNavigator: (nav) => set({ defaultNavigator: nav }),
 
       setHydrated: (hydrated) => set({ isHydrated: hydrated }),
     }),
     {
-      name: 'enruta-auth-storage',
+      name: 'enruta-auth-session',
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: (state) => ({
-        user: state.user,
-        isAuthenticated: state.isAuthenticated,
-        isGuest: state.isGuest,
-        defaultNavigator: state.defaultNavigator,
-      }),
       onRehydrateStorage: () => (state) => {
-        state?.setHydrated(true);
+        initAuthToken()
+          .catch(() => {})
+          .finally(() => {
+            state?.setHydrated(true);
+          });
       },
     }
   )

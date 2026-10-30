@@ -10,8 +10,9 @@ from pydantic import BaseModel, EmailStr, Field, ConfigDict, model_validator
 # ───────────────────────────── Base ─────────────────────────────
 class DriverBase(BaseModel):
     name: str = Field(..., min_length=2, max_length=150, examples=["Carlos Pérez"])
-    phone: str = Field(..., min_length=7, max_length=20, examples=["3001234567"])
+    phone: str | None = Field(None, min_length=7, max_length=20, examples=["3001234567"])
     email: EmailStr | None = Field(None, examples=["conductor@ejemplo.com"])
+    vehicle: str | None = Field(None, max_length=100, examples=["Moto Suzuki"])
     vehicle_plate: str | None = Field(None, max_length=10, examples=["ABC123"])
 
 
@@ -20,12 +21,20 @@ class DriverCreate(DriverBase):
     """Payload para registrar un nuevo conductor."""
     password: str = Field(..., min_length=6, examples=["segura123"])
 
+    @model_validator(mode="after")
+    def _require_email_or_phone(self) -> "DriverCreate":
+        if not self.email and not self.phone:
+            raise ValueError("Debes enviar 'email' o 'phone' para registrarte")
+        return self
+
 
 # ─────────────────────── Actualización (Request) ─────────────────
 class DriverUpdate(BaseModel):
     """Payload para actualizar datos de un conductor (todos los campos opcionales)."""
     name: str | None = Field(None, min_length=2, max_length=150)
     email: EmailStr | None = None
+    phone: str | None = Field(None, min_length=7, max_length=20)
+    vehicle: str | None = Field(None, max_length=100)
     vehicle_plate: str | None = Field(None, max_length=10)
     is_active: bool | None = None
 
