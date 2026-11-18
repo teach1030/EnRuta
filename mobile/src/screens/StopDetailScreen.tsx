@@ -42,6 +42,7 @@ export default function StopDetailScreen() {
   const defaultNavigator = useAuthStore(state => state.defaultNavigator);
 
   const handleNavigateToStop = async () => {
+    if (!stop) return;
     const lat = stop.lat;
     const lng = stop.lng;
     if (lat === undefined || lng === undefined || lat === null || lng === null) {
@@ -83,16 +84,30 @@ export default function StopDetailScreen() {
     }
   };
 
-  // Resolve the initial stop: either a tempStop (new) or an existing one from the store
-  const resolveInitial = (): Stop => {
+  // Resolve the initial stop: tempStop (new), live store stop, or fallback from navigation params (history)
+  const stopFromStore = useRouteStore(state =>
+    state.stops.find(s => s.id === String(params?.stopId ?? ''))
+  );
+
+  const resolveInitial = (): Stop | null => {
     if (isNew && params?.tempStop) return params.tempStop as Stop;
-    const { stops } = useRouteStore.getState();
-    const found = stops.find(s => s.id === params?.stopId);
-    return found ?? stops[0];
+    if (stopFromStore) return stopFromStore;
+    if (params?.stop) {
+      const raw = params.stop;
+      return raw.colorCode !== undefined ? (raw as Stop) : mapApiStopToStore(raw);
+    }
+    return null;
   };
 
-  const [stop, setStop] = useState<Stop>(resolveInitial);
+  const [stop, setStopState] = useState<Stop | null>(resolveInitial);
   const [saving, setSaving] = useState(false);
+
+  const setStop = (updater: React.SetStateAction<Stop>) => {
+    setStopState(prev => {
+      if (!prev) return prev;
+      return typeof updater === 'function' ? updater(prev) : updater;
+    });
+  };
 
   const handleColorChange = (color: string) => {
     setStop(prev => ({ ...prev, colorCode: color }));
@@ -160,7 +175,7 @@ export default function StopDetailScreen() {
   };
 
   const handleSave = async () => {
-    if (saving) return;
+    if (!stop || saving) return;
     setSaving(true);
     try {
       if (isNew) {
@@ -233,6 +248,7 @@ export default function StopDetailScreen() {
   };
 
   const handleDeleteStop = () => {
+    if (!stop) return;
     Alert.alert(
       'Eliminar Parada',
       '¿Estás seguro de que deseas eliminar esta parada de la ruta?',
@@ -259,6 +275,25 @@ export default function StopDetailScreen() {
       ]
     );
   };
+
+  if (!stop) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color="#0F172A" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Detalle de Parada</Text>
+          <View style={{ width: 32 }} />
+        </View>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <Text style={{ fontSize: 16, color: '#0F172A', fontWeight: '600' }}>
+            Error: Parada no encontrada
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>

@@ -132,11 +132,21 @@ export default function RouteDetailScreen() {
     routeTitle ||
     (routeData ? formatRouteDateTitle(routeData.route_date) : 'Detalle de Ruta');
 
-  const totalDeliveries =
-    routeData?.completed_stops ||
-    routeData?.total_stops ||
-    sortedStops.length ||
-    0;
+  const totalPackages = useMemo(
+    () =>
+      sortedStops.reduce((acc, stop) => {
+        const clients = stop.clients ?? [];
+        if (clients.length === 0) return acc + 1;
+        const stopPackages = clients.reduce(
+          (sum, c) => sum + (c.packages_count ?? c.packages ?? 1),
+          0
+        );
+        return acc + (stopPackages > 0 ? stopPackages : 1);
+      }, 0),
+    [sortedStops]
+  );
+
+  const totalDeliveries = totalPackages;
 
   const finishedTimeText = formatFinishedTime(
     routeData?.finished_at || routeData?.optimization_metadata?.finished_at
@@ -147,7 +157,11 @@ export default function RouteDetailScreen() {
     const { primaryAddress, locality } = extractAddressAndLocality(item);
 
     return (
-      <View style={styles.stopCard}>
+      <TouchableOpacity
+        style={styles.stopCard}
+        activeOpacity={0.8}
+        onPress={() => navigation.navigate('StopDetail', { stopId: item.id, stop: item })}
+      >
         <View style={styles.sequenceBadge}>
           <Text style={styles.sequenceText}>{sequenceNumber}</Text>
         </View>
@@ -165,9 +179,13 @@ export default function RouteDetailScreen() {
         </View>
 
         <View style={styles.checkmarkContainer}>
-          <Ionicons name="checkmark-circle" size={24} color="#10B981" />
+          {item.status === 'failed' ? (
+            <Ionicons name="close-circle" size={24} color="#EF4444" />
+          ) : (
+            <Ionicons name="checkmark-circle" size={24} color="#10B981" />
+          )}
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -235,7 +253,7 @@ export default function RouteDetailScreen() {
               <View style={styles.metricsRow}>
                 <View style={styles.metricBox}>
                   <Ionicons name="cube-outline" size={18} color="#065F46" style={{ marginBottom: 4 }} />
-                  <Text style={styles.metricLabel}>Total de entregas</Text>
+                  <Text style={styles.metricLabel}>Total de paquetes</Text>
                   <Text style={styles.metricValue}>{totalDeliveries}</Text>
                 </View>
 

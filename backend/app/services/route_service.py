@@ -42,6 +42,12 @@ async def finish_route(db: AsyncSession, route: Route) -> Route:
         if actual_stops > 0
         else (len(route.stops) if route.stops else route.total_stops)
     )
+    delivered_result = await db.execute(
+        select(func.count(Stop.id)).where(
+            Stop.route_id == route.id, Stop.status == StopStatus.delivered
+        )
+    )
+    delivered_count = delivered_result.scalar_one() or 0
 
     updated_metadata = dict(route.optimization_metadata or {})
     updated_metadata["finished_at"] = now.isoformat()
@@ -50,7 +56,7 @@ async def finish_route(db: AsyncSession, route: Route) -> Route:
     route.status = RouteStatus.COMPLETED
     route.finished_at = now
     route.total_stops = total_stops_count
-    route.completed_stops = total_stops_count
+    route.completed_stops = delivered_count
     route.optimization_metadata = updated_metadata
 
     await db.execute(
@@ -60,14 +66,14 @@ async def finish_route(db: AsyncSession, route: Route) -> Route:
             status=RouteStatus.COMPLETED,
             finished_at=now,
             total_stops=total_stops_count,
-            completed_stops=total_stops_count,
+            completed_stops=delivered_count,
             optimization_metadata=updated_metadata,
         )
     )
 
     logger.info("Iniciando commit en DB")
     await db.commit()
-    logger.info("Ruta guardada en DB")
+    logger.info(f"Ruta {route.id} guardada exitosamente en BD")
     await db.refresh(route)
     logger.info(
         "Commit exitoso en DB: ruta %s actualizada (status=%s, completed_stops=%s/%s, finished_at=%s)",

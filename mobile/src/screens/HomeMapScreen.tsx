@@ -302,9 +302,14 @@ export default function HomeMapScreen() {
   const [showFinishSuccessModal, setShowFinishSuccessModal] = useState(false);
   const [finishedDateText, setFinishedDateText] = useState('');
 
+  const TERMINAL_STATUSES = ['delivered', 'completed', 'failed', 'cancelled'];
   const isAllCompleted =
     stops.length > 0 &&
-    stops.every(s => s.status === 'delivered' || (s.status as string) === 'completed');
+    stops.every(s => TERMINAL_STATUSES.includes(s.status as string));
+
+  // 'Reoptimizar' solo si ya fue optimizada y hubo cambios; si nunca se optimizo, 'Optimizar Ruta'
+  const showReoptimize = isOptimized && needsReoptimization;
+  const optimizeDisabled = isOptimized && !needsReoptimization;
 
   const formatFinishedSuccessDate = (rawDate?: string | null): string => {
     try {
@@ -1004,29 +1009,29 @@ export default function HomeMapScreen() {
           <TouchableOpacity
             style={[
               styles.optimizeBtn,
-              needsReoptimization && styles.reoptimizeBtnActive,
-              (!needsReoptimization && isOptimized) && styles.optimizeBtnDisabled,
+              showReoptimize && styles.reoptimizeBtnActive,
+              optimizeDisabled && styles.optimizeBtnDisabled,
             ]}
             onPress={handleOptimize}
-            disabled={isOptimizing || (!needsReoptimization && isOptimized)}
+            disabled={isOptimizing || optimizeDisabled}
             activeOpacity={0.85}
             accessibilityRole="button"
-            accessibilityLabel={needsReoptimization ? 'Reoptimizar ruta' : 'Optimizar ruta'}
+            accessibilityLabel={showReoptimize ? 'Reoptimizar ruta' : 'Optimizar Ruta'}
           >
             {isOptimizing ? (
               <ActivityIndicator
                 size="small"
-                color={needsReoptimization ? '#FFFFFF' : PALETTE.forestGreen}
+                color={showReoptimize ? '#FFFFFF' : PALETTE.forestGreen}
                 style={{ marginRight: 6 }}
               />
             ) : (
               <Ionicons
-                name={needsReoptimization ? 'flash' : 'refresh-circle-outline'}
+                name={showReoptimize ? 'flash' : 'refresh-circle-outline'}
                 size={22}
                 color={
-                  needsReoptimization
+                  showReoptimize
                     ? '#FFFFFF'
-                    : (!needsReoptimization && isOptimized)
+                    : optimizeDisabled
                     ? PALETTE.textSecondary
                     : PALETTE.forestGreen
                 }
@@ -1036,17 +1041,17 @@ export default function HomeMapScreen() {
             <Text
               style={[
                 styles.optimizeBtnText,
-                needsReoptimization && styles.reoptimizeBtnTextActive,
-                (!needsReoptimization && isOptimized) && styles.optimizeBtnTextDisabled,
+                showReoptimize && styles.reoptimizeBtnTextActive,
+                optimizeDisabled && styles.optimizeBtnTextDisabled,
               ]}
             >
               {isOptimizing
                 ? 'Optimizando...'
-                : needsReoptimization
+                : showReoptimize
                 ? 'Reoptimizar ruta'
-                : isOptimized
+                : optimizeDisabled
                 ? 'Ruta optimizada'
-                : 'Optimizar ruta'}
+                : 'Optimizar Ruta'}
             </Text>
           </TouchableOpacity>
         </View>

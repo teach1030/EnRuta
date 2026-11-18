@@ -25,7 +25,13 @@ export type RootStackParamList = {
   HomeMap: { selectedAddress?: SelectedAddress } | undefined;
   Scanner: undefined;
   StopsList: undefined;
-  StopDetail: { stopId: string; isNew?: boolean } | { tempStop: import('../screens/HomeMapScreen').Stop; isNew: true };
+  StopDetail:
+    | {
+        stopId: string | number;
+        isNew?: boolean;
+        stop?: import('../store/useRouteStore').Stop | import('../services/api').Stop;
+      }
+    | { tempStop: import('../screens/HomeMapScreen').Stop; isNew: true };
   SearchAddress: undefined;
   RouteHistory: undefined;
   RouteDetail: { routeId: string | number; routeTitle?: string };
