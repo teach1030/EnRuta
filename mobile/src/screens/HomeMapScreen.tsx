@@ -222,6 +222,7 @@ export default function HomeMapScreen() {
   const currentRegionRef = useRef(BOGOTA_REGION);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showsTraffic, setShowsTraffic] = useState(false);
+  const [hasLocationPermission, setHasLocationPermission] = useState(false);
   const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard');
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [showOptConfig, setShowOptConfig] = useState(false);
@@ -250,6 +251,67 @@ export default function HomeMapScreen() {
 
   const toggleSheetCollapse = () => {
     animateToSnap(snapIndexRef.current === 0 ? 1 : 0);
+  };
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (!active || status !== 'granted') return;
+        setHasLocationPermission(true);
+
+        const pos = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (!active) return;
+
+        if (useRouteStore.getState().stops.length === 0) {
+          const userRegion = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            latitudeDelta: 0.015,
+            longitudeDelta: 0.015,
+          };
+          currentRegionRef.current = userRegion;
+          mapRef.current?.animateToRegion(userRegion, 500);
+        }
+      } catch {}
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleMyLocationPress = async () => {
+    try {
+      let granted = hasLocationPermission;
+      if (!granted) {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        granted = status === 'granted';
+        setHasLocationPermission(granted);
+      }
+      if (!granted) {
+        Alert.alert(
+          'Permiso de ubicación',
+          'Activa el permiso de ubicación en tu teléfono para ver dónde estás parado.'
+        );
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const region = {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      };
+      currentRegionRef.current = region;
+      mapRef.current?.animateToRegion(region, 500);
+    } catch {
+      Alert.alert('Ubicación no disponible', 'No se pudo obtener tu posición GPS actual.');
+    }
   };
 
   const sheetPanResponder = useRef(
@@ -790,7 +852,7 @@ export default function HomeMapScreen() {
         onRegionChangeComplete={(region) => {
           currentRegionRef.current = region;
         }}
-        showsUserLocation
+        showsUserLocation={hasLocationPermission}
         showsMyLocationButton={false}
         showsCompass={false}
         showsTraffic={showsTraffic}
@@ -841,6 +903,9 @@ export default function HomeMapScreen() {
         style={[styles.rightControls, { bottom: Animated.add(sheetHeight, 16) }]}
         pointerEvents="box-none"
       >
+        <FloatButton onPress={handleMyLocationPress}>
+          <Ionicons name="locate" size={22} color={PALETTE.emerald} />
+        </FloatButton>
         <FloatButton
           onPress={handleLayerPress}
           style={showsTraffic ? styles.floatBtnActive : undefined}

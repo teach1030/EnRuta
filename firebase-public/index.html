@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EnRuta Bogotá — API & Hosting</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --accent: #10b981;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+    }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: grid;
+      place-items: center;
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+    .card {
+      max-width: 560px;
+      width: 100%;
+      background: var(--card);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      border-radius: 16px;
+      padding: 2rem;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+    }
+    .badge {
+      display: inline-block;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--accent);
+      padding: 0.35rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    h1 {
+      margin: 1rem 0 0.5rem;
+      font-size: 1.75rem;
+    }
+    p {
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .grid {
+      margin-top: 1.5rem;
+      display: grid;
+      gap: 0.75rem;
+    }
+    .item {
+      background: rgba(15, 23, 42, 0.6);
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      font-size: 0.9rem;
+    }
+    .item strong {
+      color: var(--accent);
+    }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <span class="badge">FIREBASE HOSTING ACTIVO · ENRUTA BOGOTÁ</span>
+    <h1>EnRuta — Logística de Última Milla</h1>
+    <p>
+      Plataforma backend y punto de entrada en Firebase Hosting para el proyecto
+      <strong>EnRutaBogota</strong> (<code>enruta-bogota</code>).
+    </p>
+    <div class="grid">
+      <div class="item">
+        <strong>Motor IA OCR:</strong> DeepSeek Vision (<code>deepseek-flash</code>)
+      </div>
+      <div class="item">
+        <strong>Base de Datos:</strong> Supabase PostgreSQL (AsyncPG + SQLAlchemy)
+      </div>
+      <div class="item">
+        <strong>Optimización TSP:</strong> Google OR-Tools + Mapbox Geocoding
+      </div>
+      <div class="item">
+        <strong>Endpoints:</strong> <a href="/health">/health</a> · <code>/api/v1/*</code>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

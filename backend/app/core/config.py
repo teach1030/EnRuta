@@ -33,8 +33,12 @@ class Settings(BaseSettings):
     # Si hay varios (Android / iOS / Web), separarlos con comas.
     GOOGLE_CLIENT_ID: str = ""
 
-    # --- OCR (Gemini) ---
-    # gemini-1.5-flash fue retirado de la API; se usa un modelo vigente.
+    # --- OCR (DeepSeek Vision - Principal) ---
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_MODEL: str = "deepseek-flash"
+    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+
+    # --- OCR (Gemini - Respaldo opcional) ---
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-3.8-flash"
 

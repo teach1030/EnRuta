@@ -11,6 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -73,12 +74,18 @@ export default function ScannerScreen({ navigation }: Props) {
 
     setProcessing(true);
     try {
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.6 });
       if (!photo?.uri) {
         throw new Error('No se pudo capturar la imagen de la camara.');
       }
 
-      const ocrResult = await api.ocr.processGuide(photo.uri);
+      const manipulated = await ImageManipulator.manipulateAsync(
+        photo.uri,
+        [{ resize: { width: 1024 } }],
+        { compress: 0.65, format: ImageManipulator.SaveFormat.JPEG }
+      );
+
+      const ocrResult = await api.ocr.processGuide(manipulated.uri);
       const scannedAddress = (ocrResult.normalized_address || ocrResult.raw_address || '').trim();
       const scannedName = (ocrResult.recipient_name || 'Cliente').trim();
       const scannedPhone = (ocrResult.recipient_phone || '').trim();

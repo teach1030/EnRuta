@@ -2,6 +2,7 @@
   "expo": {
     "name": "EnRuta",
     "slug": "enruta",
+    "scheme": "enruta",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -30,6 +31,15 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "4ce2e031-1f94-4586-a55d-06a75629e2d5"
+      }
+    },
+    "plugins": [
+      "expo-web-browser",
+      "@react-native-google-signin/google-signin"
+    ]
   }
 }

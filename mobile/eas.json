@@ -14,12 +14,18 @@
       "distribution": "internal",
       "android": { "buildType": "apk" },
       "env": {
-        "EXPO_PUBLIC_BUILD_ENV": "preview"
+        "EXPO_PUBLIC_BUILD_ENV": "preview",
+        "EXPO_PUBLIC_API_URL": "https://enruta-bogota.web.app/api/v1",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "853477904191-tuudk76l0tdpltdtdhku80r21jno055p.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "853477904191-9lbc8911nf72jku1ab8das7gs3ee350f.apps.googleusercontent.com"
       }
     },
     "production": {
       "env": {
-        "EXPO_PUBLIC_BUILD_ENV": "production"
+        "EXPO_PUBLIC_BUILD_ENV": "production",
+        "EXPO_PUBLIC_API_URL": "https://enruta-bogota.web.app/api/v1",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "853477904191-tuudk76l0tdpltdtdhku80r21jno055p.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "853477904191-9lbc8911nf72jku1ab8das7gs3ee350f.apps.googleusercontent.com"
       }
     }
   },

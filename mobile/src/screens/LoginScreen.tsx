@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -18,9 +18,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { useAuthStore } from '../store/useAuthStore';
 import { api } from '../services/api';
+
+const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '';
 
 const { height } = Dimensions.get('window');
 
@@ -35,6 +38,14 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (GOOGLE_WEB_CLIENT_ID) {
+      GoogleSignin.configure({
+        webClientId: GOOGLE_WEB_CLIENT_ID,
+      });
+    }
+  }, []);
 
   const handleSubmit = async () => {
     const trimmedEmail = email.trim();
@@ -113,12 +124,60 @@ export default function LoginScreen() {
     }
   };
 
-  const handleGoogleSignIn = () => {
-    Alert.alert(
-      'Google Sign-In',
-      'Para esta prueba local utiliza el inicio de sesión con Email o entra como Invitado.',
-      [{ text: 'Entendido' }]
-    );
+  const handleGoogleSignIn = async () => {
+    if (!GOOGLE_WEB_CLIENT_ID) {
+      Alert.alert(
+        'Google Sign-In no configurado',
+        'Falta configurar EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID en mobile/.env.'
+      );
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      const userInfo = await GoogleSignin.signIn();
+      if ((userInfo as any)?.type === 'cancelled') {
+        return;
+      }
+      const idToken =
+        (userInfo as any)?.data?.idToken ?? (userInfo as any)?.idToken ?? '';
+      if (!idToken) {
+        Alert.alert(
+          'Token incompleto',
+          'Google no devolvió un idToken válido. Verifica el Web Client ID y el SHA-1 en Firebase.'
+        );
+        return;
+      }
+
+      const authRes = await api.auth.googleAuth(idToken);
+      login({
+        id: String(authRes.driver.id),
+        name: authRes.driver.name,
+        email: authRes.driver.email ?? '',
+        phone: authRes.driver.phone,
+        vehicle: authRes.driver.vehicle ?? authRes.driver.vehicle_plate ?? 'Vehículo asignado',
+        vehicle_plate: authRes.driver.vehicle_plate ?? '',
+      });
+      navigation.replace('HomeMap');
+    } catch (error: any) {
+      if (error?.code === statusCodes.SIGN_IN_CANCELLED) {
+        return;
+      }
+      if (error?.code === statusCodes.IN_PROGRESS) {
+        return;
+      }
+      if (error?.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        Alert.alert('Google Play Services', 'Google Play Services no está disponible o actualizado en este dispositivo.');
+        return;
+      }
+      Alert.alert(
+        'Error de Google Sign-In',
+        error?.message || 'No fue posible iniciar sesión con Google.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleGuestMode = () => {
