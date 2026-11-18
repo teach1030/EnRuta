@@ -39,11 +39,12 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
     raw: string,
     isInteger = true
   ) => {
-    if (raw === '') {
+    const sanitized = raw.trim().replace(',', '.');
+    if (sanitized === '') {
       onSimInputChange({ ...simInput, [field]: Number.NaN });
       return;
     }
-    const num = Number(raw);
+    const num = Number(sanitized);
     onSimInputChange({
       ...simInput,
       [field]: Number.isFinite(num) && isInteger ? Math.trunc(num) : num,

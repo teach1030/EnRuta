@@ -1540,7 +1540,19 @@ export function runFullSimulationLocal(
     const capacityPenalty = !m.meets_capacity ? 20.0 : 0.0;
 
     const totalPenalty = budgetPenalty + latencyPenalty + availabilityPenalty + capacityPenalty;
-    const finalScore = pyRound(Math.max(0.0, rawScore - totalPenalty), 2);
+    let finalScore: number;
+    if (rawScore > totalPenalty) {
+      finalScore = pyRound(rawScore - totalPenalty, 2);
+    } else {
+      // Amortiguación proporcional defensiva: cuando las penalizaciones superan el
+      // puntaje bruto (ej. escenarios de alto estrés donde ninguna alternativa cumple
+      // el 100% de las restricciones), se aplica un descuento porcentual acotado
+      // para que las arquitecturas sigan siendo diferenciables y no colapsen todas a 0.0
+      const penaltyDiscount = Math.min(0.88, totalPenalty / Math.max(100.0, totalPenalty));
+      const saturationFactor = Math.max(0.12, 1.0 - m.error_rate_pct / 100.0);
+      const scoreCalc = rawScore * (1.0 - penaltyDiscount) * saturationFactor;
+      finalScore = pyRound(Math.max(0.5, scoreCalc), 2);
+    }
 
     m.normalized_utilities = {
       latency: pyRound(utilities.latency, 4),

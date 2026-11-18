@@ -310,7 +310,11 @@ def test_cp03_heavy_tsp_routes_superlinear_demand_and_worker_decoupling(
     assert stress_by_id["MONO_MVP"]["latency_ms"] > 700.0
     assert stress_by_id["MONO_MVP"]["meets_availability"] is False
     assert stress_by_id["MONO_MVP"]["meets_all_constraints"] is False
-    assert stress_by_id["MONO_MVP"]["final_score"] == 0.0
+    assert stress_by_id["MONO_MVP"]["final_score"] < 25.0
+    assert (
+        stress_by_id["MICRO_DOCKER"]["final_score"]
+        > stress_by_id["MONO_MVP"]["final_score"] + 70.0
+    )
     assert stress_by_id["MICRO_DOCKER"]["meets_all_constraints"] is True
     assert sim_stress["recommendation"]["winner_id"] == "MICRO_DOCKER"
 

@@ -469,7 +469,17 @@ def run_full_simulation(
         total_penalty = (
             budget_penalty + latency_penalty + availability_penalty + capacity_penalty
         )
-        final_score = round(max(0.0, raw_score - total_penalty), 2)
+        if raw_score > total_penalty:
+            final_score = round(raw_score - total_penalty, 2)
+        else:
+            # Amortiguación proporcional defensiva: cuando las penalizaciones superan el
+            # puntaje bruto (ej. escenarios de alto estrés donde ninguna alternativa cumple
+            # el 100% de las restricciones), se aplica un descuento porcentual acotado
+            # para que las arquitecturas sigan siendo diferenciables y no colapsen todas a 0.0
+            penalty_discount = min(0.88, total_penalty / max(100.0, total_penalty))
+            saturation_factor = max(0.12, 1.0 - (m.error_rate_pct / 100.0))
+            score_calc = raw_score * (1.0 - penalty_discount) * saturation_factor
+            final_score = round(max(0.5, score_calc), 2)
 
         m.normalized_utilities = {k: round(v, 4) for k, v in utilities.items()}
         m.penalties_breakdown = {

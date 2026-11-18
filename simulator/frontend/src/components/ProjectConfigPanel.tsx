@@ -30,7 +30,8 @@ export const ProjectConfigPanel: React.FC<ProjectConfigPanelProps> = ({
   const normalized = normalizeWeights(projectConfig.weights);
 
   const handleNumberField = (field: keyof ProjectConfig, raw: string) => {
-    const parsed = raw === '' ? Number.NaN : Number(raw);
+    const sanitized = raw.trim().replace(',', '.');
+    const parsed = sanitized === '' ? Number.NaN : Number(sanitized);
     onChange({
       ...projectConfig,
       [field]: parsed,
@@ -38,7 +39,8 @@ export const ProjectConfigPanel: React.FC<ProjectConfigPanelProps> = ({
   };
 
   const handleWeightChange = (key: CriterionKey, raw: string) => {
-    const parsed = raw === '' ? 0 : Number(raw);
+    const sanitized = raw.trim().replace(',', '.');
+    const parsed = sanitized === '' ? 0 : Number(sanitized);
     onChange({
       ...projectConfig,
       weights: {
